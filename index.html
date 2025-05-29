@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark"> <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f172a"> <title>Fork AI Чат</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+            color: #e2e8f0; /* slate-200 */
+            overscroll-behavior-y: contain; 
+        }
+        .dark body { background-color: #0f172a; }
+
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.5); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb {
+            background-color: #475569;
+            border-radius: 10px;
+            border: 2px solid rgba(30, 41, 59, 0.1);
+        }
+        ::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-7px); }
+            20%, 40%, 60%, 80% { transform: translateX(7px); }
+        }
+        .animate-shake { animation: shake 0.55s cubic-bezier(.36,.07,.19,.97) both; }
+
+        .typing-indicator span {
+            height: 10px; width: 10px; margin: 0 3px;
+            background-color: #818cf8; /* indigo-400 */
+            display: inline-block; border-radius: 50%;
+            opacity: 0.4; animation: kf_wave 1.3s infinite ease-in-out;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.3s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.15s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0s; }
+        @keyframes kf_wave {
+            0%, 60%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+            30% { transform: translateY(-10px) scale(1.1); opacity: 1; }
+        }
+
+        .dark textarea::placeholder { color: #6b7280; opacity: 0.8; }
+        textarea::placeholder { color: #a1a1aa; }
+
+        .glassmorphism-panel {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px) saturate(150%);
+            -webkit-backdrop-filter: blur(12px) saturate(150%);
+            border: 1px solid rgba(51, 65, 85, 0.6);
+        }
+         .btn-primary-glow {
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.4), 0 0 24px rgba(99, 102, 241, 0.2);
+            transition: box-shadow 0.3s ease-out, transform 0.2s ease-out;
+        }
+        .btn-primary-glow:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 0 20px rgba(129, 140, 248, 0.6), 0 0 35px rgba(129, 140, 248, 0.4);
+        }
+        .btn-secondary-glow {
+            transition: background-color 0.3s ease-out, box-shadow 0.3s ease-out, transform 0.2s ease-out;
+        }
+        .btn-secondary-glow:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 0 15px rgba(71, 85, 105, 0.5);
+        }
+        .fade-in-up {
+            opacity: 0; transform: translateY(20px);
+            animation: fadeInUp 0.6s ease-out forwards;
+        }
+        @keyframes fadeInUp { to { opacity: 1; transform: translateY(0); } }
+        
+        .app-title-animate {
+            animation: textShine 3s infinite linear;
+            background: linear-gradient(90deg, #a5b4fc, #e0e7ff, #a5b4fc);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-size: 200% 100%;
+        }
+        @keyframes textShine { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* Начальное скрытие основного приложения */
+        #mainAppScreen {
+            display: none; /* Изначально скрыто через display:none */
+            opacity: 0;
+            pointer-events: none;
+        }
+        #loginScreen {
+            opacity: 0; /* Изначально прозрачно, появится с анимацией */
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const GEMINI_API_KEY = "AIzaSyCepqF8Ra27a4n_G94HBCFJmafVQBjtWBw"; 
+        const firebaseConfig = {
+          apiKey: "AIzaSyBNIwjR6hLbHhv-glNOr3eW2x1Wnvxrtrw",
+          authDomain: "fork-ai-2bf61.firebaseapp.com",
+          projectId: "fork-ai-2bf61",
+          storageBucket: "fork-ai-2bf61.appspot.com",
+          messagingSenderId: "726693995177",
+          appId: "1:726693995177:web:16a38f434eb9be22d7ffb8",
+          measurementId: "G-BSFNDC15FB"
+        };
+
+        const APP_VERSION = "Fork AI Chat v1.5"; // Обновлена версия
+        const LOGIN_PASSWORD = "2914"; 
+
+        // --- DOM Elements (объявляем здесь, чтобы были доступны глобально в скрипте) ---
+        let loginScreen, mainAppScreen, passwordInput, loginButton, loginError,
+            chatMessagesContainer, messageInput, sendButton, settingsPanel,
+            settingsButton, closeSettingsButton, themeToggle, modelSelector,
+            clearChatButton, userIdDisplay, appLoadingIndicator,
+            typingIndicatorContainer, appTitleElement, appVersionDisplay,
+            confirmationModal, confirmDeleteBtn, cancelDeleteBtn, confirmationText;
+
+
+        // --- Global State ---
+        let app, auth, db;
+        let userId = null;
+        let unsubscribeChatHistory = null; 
+        
+        const geminiModels = [
+            { 
+                id: 'gemini-2.0-flash', name: 'Fork 1.5 (Быстрый)', internalId: 'gemini-2.0-flash',
+                personaPrompt: "Ты — Fork 1.5 AI. Ты дружелюбный, очень быстрый и немногословный ИИ-ассистент. Твоя главная задача — помогать пользователям максимально оперативно и по существу. Когда тебя спрашивают, кто ты или какая ты модель, всегда представляйся как 'Fork 1.5 AI'. Не упоминай Google или Gemini, если тебя об этом не спросят напрямую. Старайся быть кратким." 
+            },
+            { 
+                id: 'gemini-pro', name: 'Fork 2.0 (Продвинутый)', internalId: 'gemini-pro',
+                personaPrompt: "Ты — Fork 2.0 AI. Ты продвинутый, вдумчивый и осведомленный ИИ-ассистент. Ты способен давать развернутые ответы и поддерживать глубокие беседы. Когда тебя спрашивают, кто ты или какая ты модель, всегда представляйся как 'Fork 2.0 AI'. Не упоминай Google или Gemini, если тебя об этом не спросят напрямую. Старайся быть обстоятельным и полезным."
+            }
+        ];
+        let currentModelConfig = geminiModels[1]; 
+
+        // --- Utility Functions ---
+        function displayGlobalError(message) {
+            const existingError = document.getElementById('globalErrorMessage');
+            if (existingError) existingError.remove();
+            const errorDiv = document.createElement('div');
+            errorDiv.id = 'globalErrorMessage';
+            errorDiv.className = 'fixed top-0 left-0 right-0 bg-red-700 text-white p-3 text-center z-[200] shadow-lg text-sm';
+            errorDiv.textContent = message;
+            document.body.prepend(errorDiv);
+            setTimeout(() => errorDiv.remove(), 8000);
+        }
+
+        // --- Core Initialization ---
+        function initializeFirebaseAndCheckKeys() {
+            let keysValid = true;
+            if (!GEMINI_API_KEY || GEMINI_API_KEY === "ВАШ_GEMINI_API_КЛЮЧ_ЗДЕСЬ") {
+                displayGlobalError("API-ключ для Gemini не настроен. Чат не будет работать.");
+                keysValid = false;
+            }
+            if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "ВАШ_apiKey_ИЗ_FIREBASE_ЗДЕСЬ") {
+                displayGlobalError("Конфигурация Firebase не настроена. Сохранение истории может не работать.");
+            }
+            if (!keysValid && firebaseConfig.apiKey === "ВАШ_apiKey_ИЗ_FIREBASE_ЗДЕСЬ") return false;
+
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('error'); 
+            } catch (e) {
+                console.error("Критическая ошибка инициализации Firebase:", e);
+                displayGlobalError(`Ошибка Firebase: ${e.message}.`);
+                return false;
+            }
+            return true;
+        }
+
+        // --- Login Logic ---
+        function handleLogin() {
+            if (!passwordInput || !loginError || !loginScreen || !mainAppScreen) {
+                console.error("Login DOM elements not found!");
+                return;
+            }
+            loginError.classList.add('opacity-0', 'hidden');
+            if (passwordInput.value === LOGIN_PASSWORD) {
+                loginScreen.classList.add('opacity-0');
+                setTimeout(() => {
+                    loginScreen.style.display = 'none'; // Используем display:none после анимации
+                    loginScreen.classList.add('pointer-events-none');
+                }, 600); 
+                
+                mainAppScreen.style.display = 'flex'; // Используем display:flex для flex-col
+                setTimeout(() => {
+                    mainAppScreen.classList.remove('opacity-0', 'pointer-events-none');
+                    if(messageInput) messageInput.focus();
+                }, 50); 
+                
+                passwordInput.value = '';
+                if (typeof initializeMainApp === 'function') initializeMainApp();
+            } else {
+                loginError.textContent = 'Неверный код доступа.';
+                loginError.classList.remove('opacity-0', 'hidden');
+                passwordInput.value = '';
+                passwordInput.focus();
+                if (passwordInput.parentElement) {
+                    passwordInput.parentElement.classList.add('animate-shake');
+                    setTimeout(() => passwordInput.parentElement.classList.remove('animate-shake'), 600);
+                }
+            }
+        }
+
+        // --- Main App Logic ---
+        async function initializeMainApp() {
+            if (!appLoadingIndicator || !appTitleElement || !appVersionDisplay || !auth) return;
+            
+            appLoadingIndicator.classList.remove('opacity-0', 'hidden');
+            appTitleElement.textContent = currentModelConfig.name; 
+            appVersionDisplay.textContent = APP_VERSION;
+
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    if(userIdDisplay) userIdDisplay.textContent = `ID: ${userId.substring(0,6)}...`;
+                    console.log("Анонимный пользователь:", userId);
+                    if (typeof populateModelSelector === 'function') populateModelSelector();
+                    if (typeof loadChatHistory === 'function') await loadChatHistory();
+                    if (typeof applyTheme === 'function') applyTheme(localStorage.getItem('theme') || 'dark'); 
+                } else {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (error) {
+                        console.error("Ошибка анонимной аутентификации:", error);
+                        displayGlobalError("Ошибка аутентификации. Сохранение может не работать.");
+                    }
+                }
+                setTimeout(() => appLoadingIndicator.classList.add('opacity-0', 'hidden'), 300);
+            });
+        }
+        
+        function populateModelSelector() {
+            if (!modelSelector) return;
+            modelSelector.innerHTML = '';
+            geminiModels.forEach(modelConf => {
+                const option = document.createElement('option');
+                option.value = modelConf.id;
+                option.textContent = modelConf.name;
+                if (modelConf.id === currentModelConfig.id) option.selected = true;
+                modelSelector.appendChild(option);
+            });
+        }
+
+        function toggleSettingsPanel() {
+            if (!settingsPanel) return;
+            const isOpen = !settingsPanel.classList.contains('opacity-0');
+            if (isOpen) {
+                settingsPanel.classList.add('opacity-0', 'translate-x-full');
+                setTimeout(() => settingsPanel.classList.add('pointer-events-none'), 300);
+            } else {
+                settingsPanel.classList.remove('pointer-events-none');
+                settingsPanel.classList.remove('opacity-0', 'translate-x-full');
+            }
+        }
+
+        function applyTheme(theme) {
+            const htmlEl = document.documentElement;
+            if (theme === 'dark') {
+                htmlEl.classList.add('dark');
+                if(themeToggle) themeToggle.checked = true;
+            } else {
+                htmlEl.classList.remove('dark');
+                if(themeToggle) themeToggle.checked = false;
+            }
+            localStorage.setItem('theme', theme);
+            const themeMeta = document.querySelector('meta[name="theme-color"]');
+            if (themeMeta) themeMeta.setAttribute('content', theme === 'dark' ? '#0f172a' : '#ffffff');
+        }
+
+        function getChatDocRefPath() {
+            if (!userId) { console.error("UserID не определен для getChatDocRefPath"); return null; }
+            return `users/${userId}/fork_ai_chats/${currentModelConfig.internalId}`;
+        }
+
+        async function loadChatHistory() {
+            if (!userId || !db || !chatMessagesContainer) return;
+            chatMessagesContainer.innerHTML = ''; 
+            if (unsubscribeChatHistory) unsubscribeChatHistory();
+            
+            const path = getChatDocRefPath();
+            if (!path) return;
+            const chatDocRef = doc(db, path);
+            
+            unsubscribeChatHistory = onSnapshot(chatDocRef, (docSnap) => {
+                if (!chatMessagesContainer) return;
+                chatMessagesContainer.innerHTML = ''; 
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+                        data.messages.forEach(msg => addMessageToUI(msg.role, msg.text, false));
+                    } else {
+                         addMessageToUI("system", `История чата с ${currentModelConfig.name} пуста. Начните диалог!`, false);
+                    }
+                } else {
+                    addMessageToUI("system", `Начните новый диалог с ${currentModelConfig.name}!`, false);
+                }
+                scrollToBottom(true);
+            }, (error) => {
+                console.error(`Ошибка загрузки истории для ${currentModelConfig.name}:`, error);
+                addMessageToUI("system", "Ошибка загрузки истории чата.", false);
+            });
+        }
+
+        async function saveChatHistory(role, text) {
+            if (!userId || !db) return;
+            const path = getChatDocRefPath();
+            if (!path) return;
+            const chatDocRef = doc(db, path);
+            const newMessage = { role, text, timestamp: serverTimestamp() };
+
+            try {
+                const docSnap = await getDoc(chatDocRef);
+                let messages = [];
+                if (docSnap.exists() && docSnap.data().messages && Array.isArray(docSnap.data().messages)) {
+                    messages = docSnap.data().messages;
+                }
+                messages.push(newMessage);
+                if (messages.length > 50) messages = messages.slice(messages.length - 50);
+                await setDoc(chatDocRef, { messages }, { merge: true });
+            } catch (error) { console.error("Ошибка сохранения истории чата:", error); }
+        }
+        
+        async function clearChatHistory() {
+            if (!userId || !db || !confirmationModal || !confirmDeleteBtn || !cancelDeleteBtn || !confirmationText) return;
+            const path = getChatDocRefPath();
+            if (!path) return;
+
+            confirmationText.textContent = `Вы уверены, что хотите очистить всю историю чата с ${currentModelConfig.name}? Это действие необратимо.`;
+            confirmationModal.classList.remove('hidden', 'opacity-0');
+
+            const handleConfirm = async () => {
+                const chatDocRef = doc(db, path);
+                try {
+                    await setDoc(chatDocRef, { messages: [] }); 
+                    addMessageToUI("system", `История чата с ${currentModelConfig.name} очищена.`, false);
+                } catch (error) {
+                    console.error("Ошибка очистки истории чата:", error);
+                    addMessageToUI("system", "Не удалось очистить историю чата.", false);
+                }
+                closeConfirmationModal();
+            };
+
+            const closeConfirmationModal = () => {
+                confirmationModal.classList.add('opacity-0');
+                setTimeout(() => confirmationModal.classList.add('hidden'), 300);
+                confirmDeleteBtn.removeEventListener('click', handleConfirm);
+                cancelDeleteBtn.removeEventListener('click', closeConfirmationModal);
+            };
+            
+            confirmDeleteBtn.addEventListener('click', handleConfirm, { once: true });
+            cancelDeleteBtn.addEventListener('click', closeConfirmationModal, { once: true });
+        }
+
+        function addMessageToUI(role, text, animate = true) {
+            if (!chatMessagesContainer) return;
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('p-3.5', 'rounded-2xl', 'max-w-[85%]', 'sm:max-w-[75%]', 'mb-3', 'shadow-lg', 'break-words');
+            
+            if (animate) messageElement.classList.add('opacity-0', 'transform', role === 'user' ? 'translate-x-10' : '-translate-x-10', 'transition-all', 'duration-500', 'ease-out');
+
+            if (role === 'user') messageElement.classList.add('bg-indigo-600', 'dark:bg-indigo-500', 'text-white', 'self-end', 'rounded-br-lg');
+            else if (role === 'model') messageElement.classList.add('bg-slate-200', 'dark:bg-slate-700', 'text-slate-800', 'dark:text-slate-100', 'self-start', 'rounded-bl-lg');
+            else { 
+                messageElement.classList.add('bg-slate-700/50', 'dark:bg-slate-800/60', 'text-slate-400', 'dark:text-slate-500', 'self-center', 'text-xs', 'italic', 'text-center', 'w-full', 'max-w-full', 'py-2', 'px-4', 'rounded-full');
+                animate = false;
+            }
+            
+            let formattedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>') 
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-800 dark:bg-black/50 p-3 rounded-md overflow-x-auto text-sm my-2"><code class="text-slate-300 dark:text-slate-400">$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code class="bg-slate-600/50 dark:bg-slate-800/70 px-1.5 py-0.5 rounded text-sm">$1</code>');       
+
+            messageElement.innerHTML = formattedText;
+            chatMessagesContainer.appendChild(messageElement);
+
+            if (animate) requestAnimationFrame(() => messageElement.classList.remove('opacity-0', 'translate-x-10', '-translate-x-10'));
+            scrollToBottom();
+        }
+
+        function scrollToBottom(instant = false) {
+            if (!chatMessagesContainer) return;
+            chatMessagesContainer.scrollTo({ top: chatMessagesContainer.scrollHeight, behavior: instant ? 'instant' : 'smooth' });
+        }
+
+        async function handleSendMessage() {
+            if (!messageInput || !userId || !db || !sendButton || !typingIndicatorContainer) return;
+            const messageText = messageInput.value.trim();
+            if (messageText === '') return;
+            if (GEMINI_API_KEY === "ВАШ_GEMINI_API_КЛЮЧ_ЗДЕСЬ" || !GEMINI_API_KEY) {
+                addMessageToUI("system", "Ошибка: API-ключ для Gemini не настроен.", true); return;
+            }
+
+            addMessageToUI('user', messageText);
+            await saveChatHistory('user', messageText); 
+            messageInput.value = ''; messageInput.style.height = 'auto'; 
+            sendButton.disabled = true; sendButton.classList.add('opacity-50', 'cursor-not-allowed'); sendButton.classList.remove('hover:bg-indigo-500');
+            typingIndicatorContainer.classList.remove('opacity-0', 'hidden');
+
+            let conversationHistory = [];
+            const path = getChatDocRefPath();
+            if (path) {
+                const chatDocRef = doc(db, path);
+                try {
+                    const docSnap = await getDoc(chatDocRef);
+                    if (docSnap.exists() && docSnap.data().messages) {
+                        const historyForPrompt = docSnap.data().messages.slice(0, -1).slice(-12);
+                        conversationHistory = historyForPrompt.map(msg => ({ role: msg.role === 'model' ? 'model' : 'user', parts: [{ text: msg.text }] }));
+                    }
+                } catch (e) { console.error("Ошибка получения истории для контекста:", e); }
+            }
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${currentModelConfig.internalId}:generateContent?key=${GEMINI_API_KEY}`;
+            const payload = {
+                contents: [...conversationHistory, { role: "user", parts: [{ text: messageText }] }],
+                systemInstruction: { parts: [{ text: currentModelConfig.personaPrompt }] },
+                generationConfig: { temperature: currentModelConfig.internalId === 'gemini-pro' ? 0.7 : 0.6 }
+            };
+            
+            try {
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    let detail = errorData.error?.message || 'Нет деталей';
+                    if (errorData.error?.status) detail += ` (Статус: ${errorData.error.status})`;
+                    throw new Error(`Ошибка API (${response.status}): ${detail}`);
+                }
+                const result = await response.json();
+                if (result.candidates && result.candidates[0]?.content?.parts?.[0]) {
+                    const modelResponse = result.candidates[0].content.parts[0].text;
+                    addMessageToUI('model', modelResponse);
+                    await saveChatHistory('model', modelResponse);
+                } else {
+                    let errorMsg = 'Не удалось получить корректный ответ от ИИ.';
+                    if (result.promptFeedback?.blockReason) errorMsg += ` Причина: ${result.promptFeedback.blockReason}.`;
+                    console.error("Проблема с ответом Gemini API:", result); addMessageToUI('system', errorMsg);
+                }
+            } catch (error) {
+                console.error("Ошибка при вызове Gemini API:", error); addMessageToUI('system', `Ошибка сети или API: ${error.message}`);
+            } finally {
+                sendButton.disabled = false; sendButton.classList.remove('opacity-50', 'cursor-not-allowed'); sendButton.classList.add('hover:bg-indigo-500');
+                typingIndicatorContainer.classList.add('opacity-0'); setTimeout(() => typingIndicatorContainer.classList.add('hidden'), 300);
+                scrollToBottom(); if(messageInput) messageInput.focus();
+            }
+        }
+        
+        // --- Event Listeners Setup ---
+        function setupGlobalEventListeners() {
+            if (!loginButton || !passwordInput || !sendButton || !messageInput || !settingsButton || !closeSettingsButton || !themeToggle || !modelSelector || !clearChatButton) {
+                console.error("Не все DOM элементы для обработчиков найдены!");
+                return;
+            }
+
+            loginButton.addEventListener('click', handleLogin);
+            passwordInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
+            sendButton.addEventListener('click', handleSendMessage);
+            messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } });
+            messageInput.addEventListener('input', () => {
+                const isEmpty = messageInput.value.trim() === '';
+                sendButton.disabled = isEmpty;
+                sendButton.classList.toggle('opacity-50', isEmpty);
+                sendButton.classList.toggle('cursor-not-allowed', isEmpty);
+                sendButton.classList.toggle('hover:bg-indigo-500', !isEmpty);
+                messageInput.style.height = 'auto'; 
+                messageInput.style.height = `${Math.min(messageInput.scrollHeight, 160)}px`;
+            });
+            settingsButton.addEventListener('click', toggleSettingsPanel);
+            closeSettingsButton.addEventListener('click', toggleSettingsPanel);
+            themeToggle.addEventListener('change', (e) => applyTheme(e.target.checked ? 'dark' : 'light'));
+            modelSelector.addEventListener('change', async (e) => {
+                const selectedModelId = e.target.value;
+                currentModelConfig = geminiModels.find(m => m.id === selectedModelId) || geminiModels[0];
+                if(appTitleElement) appTitleElement.textContent = currentModelConfig.name;
+                console.log("Модель изменена на:", currentModelConfig.name);
+                if(chatMessagesContainer) chatMessagesContainer.innerHTML = `<div class="flex justify-center items-center h-full p-6 fade-in-up"><div class="typing-indicator"><span></span><span></span><span></span></div><p class="ml-4 text-slate-400 text-lg">Загрузка истории для ${currentModelConfig.name}...</p></div>`;
+                if (typeof loadChatHistory === 'function') await loadChatHistory(); 
+            });
+            clearChatButton.addEventListener('click', clearChatHistory);
+            document.addEventListener('click', (event) => {
+                if (settingsPanel && !settingsPanel.classList.contains('opacity-0') && !settingsPanel.contains(event.target) && settingsButton && !settingsButton.contains(event.target)) {
+                    toggleSettingsPanel();
+                }
+            });
+        }
+        
+        // --- DOMContentLoaded: Main Entry Point ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Assign DOM Elements ---
+            loginScreen = document.getElementById('loginScreen');
+            mainAppScreen = document.getElementById('mainAppScreen');
+            passwordInput = document.getElementById('passwordInput');
+            loginButton = document.getElementById('loginButton');
+            loginError = document.getElementById('loginError');
+            chatMessagesContainer = document.getElementById('chatMessages');
+            messageInput = document.getElementById('messageInput');
+            sendButton = document.getElementById('sendButton');
+            settingsPanel = document.getElementById('settingsPanel');
+            settingsButton = document.getElementById('settingsButton');
+            closeSettingsButton = document.getElementById('closeSettingsButton');
+            themeToggle = document.getElementById('themeToggle');
+            modelSelector = document.getElementById('modelSelector');
+            clearChatButton = document.getElementById('clearChatButton');
+            userIdDisplay = document.getElementById('userIdDisplay');
+            appLoadingIndicator = document.getElementById('appLoadingIndicator');
+            typingIndicatorContainer = document.getElementById('typingIndicatorContainer');
+            appTitleElement = document.getElementById('appTitle');
+            appVersionDisplay = document.getElementById('appVersionDisplay');
+            confirmationModal = document.getElementById('confirmationModal');
+            confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+            cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+            confirmationText = document.getElementById('confirmationText');
+
+            // --- Initial Setup ---
+            if (typeof applyTheme === 'function') applyTheme(localStorage.getItem('theme') || 'dark'); 
+
+            if (initializeFirebaseAndCheckKeys()) {
+                if (typeof setupGlobalEventListeners === 'function') setupGlobalEventListeners();
+                // Показываем экран входа с анимацией
+                if (loginScreen) {
+                    loginScreen.classList.remove('opacity-0');
+                    loginScreen.classList.add('fade-in-up'); // Используем fade-in-up для появления
+                } else {
+                    console.error("Login screen element not found on DOMContentLoaded!");
+                }
+            } else {
+                if (loginButton) {
+                    loginButton.disabled = true;
+                    loginButton.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12,4V2A10,10,0,0,0,2,12H4A8,8,0,0,1,12,4Z"></path></svg> Ошибка конфигурации`;
+                    loginButton.classList.add("opacity-70", "cursor-not-allowed", "bg-red-700", "hover:bg-red-800");
+                    loginButton.classList.remove("bg-indigo-600", "hover:bg-indigo-700");
+                }
+                 if (loginScreen) { // Все равно показываем экран входа, но с ошибкой
+                    loginScreen.classList.remove('opacity-0');
+                    loginScreen.classList.add('fade-in-up');
+                }
+                displayGlobalError("Критическая ошибка конфигурации. Проверьте ключи API в коде.");
+            }
+        });
+
+    </script>
+</head>
+<body class="flex flex-col h-screen antialiased overflow-hidden">
+
+    <div id="loginScreen" class="fixed inset-0 bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex flex-col items-center justify-center p-6 transition-opacity duration-500 ease-in-out z-[100]">
+        <div class="glassmorphism-panel p-8 sm:p-10 rounded-xl shadow-2xl w-full max-w-md text-center">
+            <svg class="w-16 h-16 mx-auto mb-6 text-indigo-400" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.71,2.58C12.32,2.2,11.69,2.2,11.3,2.58L2.6,11.28C2.21,11.67,2.21,12.3,2.6,12.69L11.3,21.39C11.69,21.78,12.32,21.78,12.71,21.39L21.41,12.69C21.8,12.3,21.8,11.67,21.41,11.28L12.71,2.58M12,12.41L19.59,4.83L12.01,4.83L4.42,12.41L12.01,20L19.59,12.41L12,12.41Z" />
+            </svg>
+            <h1 class="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 mb-3">Fork AI</h1>
+            <p class="text-slate-300 mb-8 text-sm sm:text-base">Введите код доступа для начала общения.</p>
+            <div class="relative mb-3">
+                <input type="password" id="passwordInput" placeholder="Код доступа" class="w-full p-3.5 pl-10 border border-slate-700 rounded-lg bg-slate-800/80 text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all placeholder-slate-500 text-center text-lg tracking-widest">
+                <svg class="w-5 h-5 text-slate-500 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            </div>
+            <p id="loginError" class="text-red-400 text-sm mb-6 h-5 opacity-0 hidden transition-opacity duration-300"></p>
+            <button id="loginButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-indigo-500/50 btn-primary-glow flex items-center justify-center text-base">
+                Войти
+            </button>
+        </div>
+    </div>
+
+    <div id="mainAppScreen" class="h-screen flex-col"> <header class="bg-slate-800/70 backdrop-blur-md border-b border-slate-700/50 p-4 flex justify-between items-center shrink-0 shadow-lg z-10">
+            <div class="flex items-center">
+                <svg class="w-8 h-8 text-indigo-400 mr-3" viewBox="0 0 24 24" fill="currentColor">
+                     <path d="M12.71,2.58C12.32,2.2,11.69,2.2,11.3,2.58L2.6,11.28C2.21,11.67,2.21,12.3,2.6,12.69L11.3,21.39C11.69,21.78,12.32,21.78,12.71,21.39L21.41,12.69C21.8,12.3,21.8,11.67,21.41,11.28L12.71,2.58M12,12.41L19.59,4.83L12.01,4.83L4.42,12.41L12.01,20L19.59,12.41L12,12.41Z" />
+                </svg>
+                <h1 id="appTitle" class="text-xl sm:text-2xl font-bold app-title-animate">Fork AI</h1>
+            </div>
+            <div class="flex items-center space-x-3">
+                <span id="userIdDisplay" class="text-xs text-slate-400 hidden sm:block"></span>
+                <button id="settingsButton" title="Настройки" class="p-2 rounded-full hover:bg-slate-700 transition-colors duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-300 hover:text-indigo-400 transition-colors"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <main id="chatMessages" class="flex-grow overflow-y-auto p-4 sm:p-6 space-y-1.5 flex flex-col">
+            <div id="appLoadingIndicator" class="flex flex-col justify-center items-center h-full p-6 opacity-0 hidden transition-opacity duration-300">
+                <div class="typing-indicator"><span></span><span></span><span></span></div>
+                <p class="mt-6 text-slate-400 text-lg">Загрузка чата...</p>
+            </div>
+        </main>
+
+        <div id="typingIndicatorContainer" class="px-4 sm:px-6 pb-2 pt-1 opacity-0 hidden transition-opacity duration-300">
+            <div class="flex items-center space-x-2 self-start max-w-xs">
+                 <div class="typing-indicator"><span></span><span></span><span></span></div>
+                <p class="text-sm text-slate-400">Fork AI печатает...</p>
+            </div>
+        </div>
+
+        <footer class="bg-slate-800/50 backdrop-blur-sm border-t border-slate-700/50 p-3 sm:p-4 shrink-0">
+            <div class="flex items-end space-x-2 sm:space-x-3 max-w-3xl mx-auto">
+                <textarea id="messageInput" rows="1" placeholder="Спросите что-нибудь у Fork AI..." class="flex-grow p-3 border border-slate-700 rounded-xl bg-slate-800 text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-all text-sm sm:text-base placeholder-slate-500" style="min-height: 48px; max-height: 180px;"></textarea>
+                <button id="sendButton" title="Отправить" class="p-3 bg-indigo-600 text-white rounded-xl transition-all duration-300 shadow-md hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600 flex-shrink-0 h-[48px] w-[48px] flex items-center justify-center btn-primary-glow" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <aside id="settingsPanel" class="fixed inset-y-0 right-0 w-full sm:w-80 md:w-96 glassmorphism-panel shadow-2xl p-6 transform translate-x-full opacity-0 pointer-events-none transition-all duration-300 ease-in-out z-50 flex flex-col">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl font-semibold text-slate-100">Настройки</h2>
+            <button id="closeSettingsButton" title="Закрыть настройки" class="p-2 rounded-full hover:bg-slate-700/70 transition-colors duration-200">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400 hover:text-indigo-400 transition-colors"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        
+        <div class="space-y-8 flex-grow overflow-y-auto pr-2 -mr-2">
+            <div>
+                <label for="themeToggle" class="block text-sm font-medium text-slate-300 mb-2">Тема оформления</label>
+                <label class="relative inline-flex items-center cursor-pointer group">
+                    <input type="checkbox" id="themeToggle" class="sr-only peer">
+                    <div class="w-14 h-7 bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-indigo-500/50 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-600 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <span class="ml-3 text-sm font-medium text-slate-300 group-hover:text-indigo-300 transition-colors">Темная тема</span>
+                </label>
+            </div>
+
+            <div>
+                <label for="modelSelector" class="block text-sm font-medium text-slate-300 mb-2">Выбрать модель ИИ</label>
+                <select id="modelSelector" class="w-full p-3 border border-slate-600 rounded-lg bg-slate-700/80 text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all appearance-none bg-no-repeat bg-right pr-8" style="background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E'); background-position: right 0.75rem center; background-size: 1.2em;">
+                </select>
+            </div>
+            
+            <div>
+                <button id="clearChatButton" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-300 shadow-md hover:shadow-red-500/40 btn-secondary-glow flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    Очистить историю чата
+                </button>
+            </div>
+        </div>
+        <div class="mt-auto pt-6 border-t border-slate-700/50 text-center">
+            <p id="appVersionDisplay" class="text-xs text-slate-500"></p>
+        </div>
+    </aside>
+
+    <div id="confirmationModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[150] hidden opacity-0 transition-opacity duration-300">
+        <div class="glassmorphism-panel p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md"> <h3 class="text-xl font-semibold text-slate-100 mb-4">Подтверждение</h3>
+            <p id="confirmationText" class="text-slate-300 mb-6 text-sm"></p>
+            <div class="flex justify-end space-x-3">
+                <button id="cancelDeleteBtn" class="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-slate-100 rounded-lg transition-colors btn-secondary-glow text-sm font-medium">Отмена</button>
+                <button id="confirmDeleteBtn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors btn-secondary-glow text-sm font-medium">Удалить</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
